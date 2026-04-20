@@ -1,0 +1,2548 @@
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (SAM)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# Resources:
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: !Sub "${AWS::StackName}-Tasks"
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: !Sub "${AWS::StackName}-Workspace"
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: !Sub "${AWS::StackName}-WorkspaceMembers"
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+
+# # ---------------- S3 ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+#     Properties:
+#       BucketName: !Sub "${AWS::StackName}-uploads-${AWS::AccountId}"
+
+# # ---------------- SQS ----------------
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+#     Properties:
+#       QueueName: !Sub "${AWS::StackName}-TaskQueue"
+
+# # ---------------- SNS ----------------
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+#     Properties:
+#       TopicName: !Sub "${AWS::StackName}-TaskTopic"
+
+# # ---------------- LAMBDAS ----------------
+
+#   TaskServiceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref TasksTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#         - SQSSendMessagePolicy:
+#             QueueName: !GetAtt TaskQueue.QueueName
+
+#       Events:
+#         TaskApi:
+#           Type: Api
+#           Properties:
+#             Path: /tasks
+#             Method: ANY
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+
+#       Events:
+#         WorkspaceApi:
+#           Type: Api
+#           Properties:
+#             Path: /workspace
+#             Method: ANY
+
+#   MembersFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/members-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+
+#       Events:
+#         MembersApi:
+#           Type: Api
+#           Properties:
+#             Path: /members
+#             Method: ANY
+
+#   UploadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/upload-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3CrudPolicy:
+#             BucketName: !Ref UploadBucket
+
+#       Events:
+#         UploadApi:
+#           Type: Api
+#           Properties:
+#             Path: /upload-url
+#             Method: POST
+
+#   DownloadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/download-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3ReadPolicy:
+#             BucketName: !Ref UploadBucket
+
+#       Events:
+#         DownloadApi:
+#           Type: Api
+#           Properties:
+#             Path: /download-url
+#             Method: GET
+
+#   ConsumerFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/consumer-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TOPIC_ARN: !Ref TaskTopic
+#       Policies:
+#         - SNSPublishMessagePolicy:
+#             TopicName: !GetAtt TaskTopic.TopicName
+
+#       Events:
+#         SQSTrigger:
+#           Type: SQS
+#           Properties:
+#             Queue: !GetAtt TaskQueue.Arn
+
+# # ---------------- OUTPUT ----------------
+
+# Outputs:
+#   ApiUrl:
+#     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (SAM)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+#   Api:
+#     Cors:
+#       AllowMethods: "'*'"
+#       AllowHeaders: "'*'"
+#       AllowOrigin: "'*'"
+#     Auth:
+#       DefaultAuthorizer: CognitoAuthorizer
+#       Authorizers:
+#         CognitoAuthorizer:
+#           UserPoolArn: arn:aws:cognito-idp:us-east-1:506098131053:userpool/us-east-1_xZ19cFxgb
+
+# # ---------------- DYNAMODB ----------------
+
+# Resources:
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: !Sub "${AWS::StackName}-Tasks"
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: !Sub "${AWS::StackName}-Workspace"
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       TableName: !Sub "${AWS::StackName}-WorkspaceMembers"
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+#       GlobalSecondaryIndexes:
+#         - IndexName: userId-index
+#           KeySchema:
+#             - AttributeName: userId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+# # ---------------- S3 ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+#     Properties:
+#       BucketName: !Sub "${AWS::StackName}-uploads-${AWS::AccountId}"
+
+# # ---------------- SQS ----------------
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+#     Properties:
+#       QueueName: !Sub "${AWS::StackName}-TaskQueue"
+
+# # ---------------- SNS ----------------
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+#     Properties:
+#       TopicName: !Sub "${AWS::StackName}-TaskTopic"
+
+# # ---------------- LAMBDAS ----------------
+
+#   TaskServiceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref TasksTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#         - SQSSendMessagePolicy:
+#             QueueName: !GetAtt TaskQueue.QueueName
+#       Events:
+#         TaskApi:
+#           Type: Api
+#           Properties:
+#             Path: /tasks
+#             Method: ANY
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         WorkspaceApi:
+#           Type: Api
+#           Properties:
+#             Path: /workspace
+#             Method: ANY
+
+#   MembersFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/members-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         MembersApi:
+#           Type: Api
+#           Properties:
+#             Path: /members
+#             Method: ANY
+
+#   UploadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/upload-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3CrudPolicy:
+#             BucketName: !Ref UploadBucket
+#       Events:
+#         UploadApi:
+#           Type: Api
+#           Properties:
+#             Path: /upload-url
+#             Method: POST
+
+#   DownloadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/download-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3ReadPolicy:
+#             BucketName: !Ref UploadBucket
+#       Events:
+#         DownloadApi:
+#           Type: Api
+#           Properties:
+#             Path: /download-url
+#             Method: GET
+
+#   ConsumerFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/consumer-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           SNS_TOPIC_ARN: !Ref TaskTopic
+#       Policies:
+#         - SNSPublishMessagePolicy:
+#             TopicName: !GetAtt TaskTopic.TopicName
+#       Events:
+#         SQSTrigger:
+#           Type: SQS
+#           Properties:
+#             Queue: !GetAtt TaskQueue.Arn
+
+# # ---------------- OUTPUT ----------------
+
+# Outputs:
+#   ApiUrl:
+# #     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (Full IaC)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# # ---------------- COGNITO ----------------
+
+# Resources:
+
+#   UserPool:
+#     Type: AWS::Cognito::UserPool
+#     Properties:
+#       UserPoolName: !Sub "${AWS::StackName}-userpool"
+#       AutoVerifiedAttributes:
+#         - email
+#       UsernameAttributes:
+#         - email
+#       Policies:
+#         PasswordPolicy:
+#           MinimumLength: 6
+
+#   UserPoolClient:
+#     Type: AWS::Cognito::UserPoolClient
+#     Properties:
+#       ClientName: !Sub "${AWS::StackName}-client"
+#       UserPoolId: !Ref UserPool
+#       GenerateSecret: false
+#       AllowedOAuthFlowsUserPoolClient: true
+#       AllowedOAuthFlows:
+#         - implicit
+#       AllowedOAuthScopes:
+#         - email
+#         - openid
+#         - profile
+#       CallbackURLs:
+#         - http://localhost:3000   # update later
+#       LogoutURLs:
+#         - http://localhost:3000
+#       SupportedIdentityProviders:
+#         - COGNITO
+
+#   UserPoolDomain:
+#     Type: AWS::Cognito::UserPoolDomain
+#     Properties:
+#       Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+#       UserPoolId: !Ref UserPool
+
+# # ---------------- API ----------------
+
+#   ApiGateway:
+#     Type: AWS::Serverless::Api
+#     Properties:
+#       StageName: Prod
+#       Cors:
+#         AllowMethods: "'*'"
+#         AllowHeaders: "'*'"
+#         AllowOrigin: "'*'"
+#       Auth:
+#         DefaultAuthorizer: CognitoAuthorizer
+#         Authorizers:
+#           CognitoAuthorizer:
+#             UserPoolArn: !GetAtt UserPool.Arn
+#             Identity:
+#               Header: Authorization
+#             JwtConfiguration:
+#               audience:
+#                 - !Ref UserPoolClient
+#               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+#       GlobalSecondaryIndexes:
+#         - IndexName: userId-index
+#           KeySchema:
+#             - AttributeName: userId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+# # ---------------- S3 ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+
+# # ---------------- SQS ----------------
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+
+# # ---------------- SNS ----------------
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+
+# # ---------------- LAMBDAS ----------------
+
+#   TaskServiceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref TasksTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#         - SQSSendMessagePolicy:
+#             QueueName: !GetAtt TaskQueue.QueueName
+#       Events:
+#         TaskApi:
+#           Type: Api
+#           Properties:
+#             RestApiId: !Ref ApiGateway
+#             Path: /tasks
+#             Method: ANY
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         WorkspaceApi:
+#           Type: Api
+#           Properties:
+#             RestApiId: !Ref ApiGateway
+#             Path: /workspace
+#             Method: ANY
+
+#   MembersFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/members-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         MembersApi:
+#           Type: Api
+#           Properties:
+#             RestApiId: !Ref ApiGateway
+#             Path: /members
+#             Method: ANY
+
+#   UploadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/upload-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3CrudPolicy:
+#             BucketName: !Ref UploadBucket
+#       Events:
+#         UploadApi:
+#           Type: Api
+#           Properties:
+#             RestApiId: !Ref ApiGateway
+#             Path: /upload-url
+#             Method: POST
+
+#   DownloadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/download-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3ReadPolicy:
+#             BucketName: !Ref UploadBucket
+#       Events:
+#         DownloadApi:
+#           Type: Api
+#           Properties:
+#             RestApiId: !Ref ApiGateway
+#             Path: /download-url
+#             Method: GET
+
+#   ConsumerFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/consumer-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TOPIC_ARN: !Ref TaskTopic
+#       Policies:
+#         - SNSPublishMessagePolicy:
+#             TopicName: !GetAtt TaskTopic.TopicName
+#       Events:
+#         SQSTrigger:
+#           Type: SQS
+#           Properties:
+#             Queue: !GetAtt TaskQueue.Arn
+
+# # ---------------- OUTPUTS ----------------
+
+# Outputs:
+#   ApiUrl:
+#     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+
+#   CognitoLoginUrl:
+#     Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=http://localhost:3000"
+
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (Full IaC - FIXED)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# # ---------------- COGNITO ----------------
+
+# Resources:
+
+#   UserPool:
+#     Type: AWS::Cognito::UserPool
+#     Properties:
+#       UserPoolName: !Sub "${AWS::StackName}-userpool"
+#       AutoVerifiedAttributes:
+#         - email
+#       UsernameAttributes:
+#         - email
+
+#   UserPoolClient:
+#     Type: AWS::Cognito::UserPoolClient
+#     Properties:
+#       ClientName: !Sub "${AWS::StackName}-client"
+#       UserPoolId: !Ref UserPool
+#       GenerateSecret: false
+#       AllowedOAuthFlowsUserPoolClient: true
+#       AllowedOAuthFlows:
+#         - implicit
+#       AllowedOAuthScopes:
+#         - email
+#         - openid
+#         - profile
+#       CallbackURLs:
+#         - http://localhost:3000
+#       SupportedIdentityProviders:
+#         - COGNITO
+
+#   UserPoolDomain:
+#     Type: AWS::Cognito::UserPoolDomain
+#     Properties:
+#       Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+#       UserPoolId: !Ref UserPool
+
+# # ---------------- HTTP API (IMPORTANT FIX) ----------------
+
+#   HttpApi:
+#     Type: AWS::Serverless::HttpApi
+#     Properties:
+#       StageName: Prod
+#       CorsConfiguration:
+#         AllowMethods:
+#           - GET
+#           - POST
+#           - PUT
+#           - DELETE
+#         AllowHeaders:
+#           - "*"
+#         AllowOrigins:
+#           - "*"
+#       Auth:
+#         DefaultAuthorizer: CognitoAuth
+#         Authorizers:
+#           CognitoAuth:
+#             JwtConfiguration:
+#               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+#               audience:
+#                 - !Ref UserPoolClient
+#             IdentitySource: "$request.header.Authorization"
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+#       GlobalSecondaryIndexes:
+#         - IndexName: userId-index
+#           KeySchema:
+#             - AttributeName: userId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+# # ---------------- S3 / SQS / SNS ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+
+# # ---------------- LAMBDAS ----------------
+
+#   TaskServiceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref TasksTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#         - SQSSendMessagePolicy:
+#             QueueName: !GetAtt TaskQueue.QueueName
+#       Events:
+#         TaskApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /tasks
+#             Method: ANY
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         WorkspaceApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /workspace
+#             Method: ANY
+
+# # ---------------- OUTPUTS ----------------
+
+# Outputs:
+
+#   ApiUrl:
+#     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+#   CognitoLoginUrl:
+#     Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=http://localhost:3000"
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (Full IaC - FINAL)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# Resources:
+
+# # ---------------- COGNITO ----------------
+
+#   UserPool:
+#     Type: AWS::Cognito::UserPool
+#     Properties:
+#       UserPoolName: !Sub "${AWS::StackName}-userpool"
+#       AutoVerifiedAttributes: [email]
+#       UsernameAttributes: [email]
+
+#   UserPoolClient:
+#     Type: AWS::Cognito::UserPoolClient
+#     Properties:
+#       ClientName: !Sub "${AWS::StackName}-client"
+#       UserPoolId: !Ref UserPool
+#       GenerateSecret: false
+#       AllowedOAuthFlowsUserPoolClient: true
+#       AllowedOAuthFlows: [implicit]
+#       AllowedOAuthScopes: [email, openid, profile]
+#       CallbackURLs:
+#         - http://localhost:3000
+#       SupportedIdentityProviders:
+#         - COGNITO
+
+#   UserPoolDomain:
+#     Type: AWS::Cognito::UserPoolDomain
+#     Properties:
+#       Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+#       UserPoolId: !Ref UserPool
+
+# # ---------------- HTTP API ----------------
+
+#   HttpApi:
+#     Type: AWS::Serverless::HttpApi
+#     Properties:
+#       CorsConfiguration:
+#         AllowMethods: [GET, POST, PUT, DELETE]
+#         AllowHeaders: ["*"]
+#         AllowOrigins: ["*"]
+#       Auth:
+#         DefaultAuthorizer: CognitoAuth
+#         Authorizers:
+#           CognitoAuth:
+#             JwtConfiguration:
+#               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+#               audience:
+#                 - !Ref UserPoolClient
+#             IdentitySource: "$request.header.Authorization"
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+#       GlobalSecondaryIndexes:
+#         - IndexName: userId-index
+#           KeySchema:
+#             - AttributeName: userId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+# # ---------------- S3 / SQS / SNS ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+
+# # ---------------- LAMBDAS ----------------
+
+#   TaskServiceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref TasksTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#         - SQSSendMessagePolicy:
+#             QueueName: !GetAtt TaskQueue.QueueName
+#       Events:
+#         TaskApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /tasks
+#             Method: ANY
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceTable
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         WorkspaceApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /workspace
+#             Method: ANY
+
+#   MembersFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/members-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Policies:
+#         - DynamoDBCrudPolicy:
+#             TableName: !Ref WorkspaceMembersTable
+#       Events:
+#         MembersApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /members
+#             Method: ANY
+
+#   UploadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/upload-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3CrudPolicy:
+#             BucketName: !Ref UploadBucket
+#       Events:
+#         UploadApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /upload-url
+#             Method: POST
+
+#   DownloadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/download-url/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Policies:
+#         - S3ReadPolicy:
+#             BucketName: !Ref UploadBucket
+#       Events:
+#         DownloadApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /download-url
+#             Method: GET
+
+#   ConsumerFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/consumer-service/
+#       Handler: index.handler
+#       Environment:
+#         Variables:
+#           SNS_TOPIC_ARN: !Ref TaskTopic
+#       Policies:
+#         - SNSPublishMessagePolicy:
+#             TopicName: !GetAtt TaskTopic.TopicName
+#       Events:
+#         SQSTrigger:
+#           Type: SQS
+#           Properties:
+#             Queue: !GetAtt TaskQueue.Arn
+
+# # ----------Bucket-----------------#
+#   FrontendBucket:
+#     Type: AWS::S3::Bucket
+#     Properties:
+#       BucketName: !Sub "${AWS::StackName}-frontend-${AWS::AccountId}"
+#       PublicAccessBlockConfiguration:
+#         BlockPublicAcls: true
+#         BlockPublicPolicy: true
+#         IgnorePublicAcls: true
+#         RestrictPublicBuckets: true
+
+#  #-------Cloudfront-------#       
+
+#   CloudFrontOAC:
+#     Type: AWS::CloudFront::OriginAccessControl
+#     Properties:
+#       OriginAccessControlConfig:
+#         Name: !Sub "${AWS::StackName}-oac"
+#         OriginAccessControlOriginType: s3
+#         SigningBehavior: always
+#         SigningProtocol: sigv4
+
+  
+#   #--------Cloudfront Distirbution-----#
+
+#   CloudFrontDistribution:
+#     Type: AWS::CloudFront::Distribution
+#     Properties:
+#       DistributionConfig:
+#         Enabled: true
+#         DefaultRootObject: index.html
+
+#       Origins:
+#         - Id: S3Origin
+#           DomainName: !GetAtt FrontendBucket.RegionalDomainName
+#           S3OriginConfig: {}
+#           OriginAccessControlId: !Ref CloudFrontOAC
+
+#       DefaultCacheBehavior:
+#         TargetOriginId: S3Origin
+#         ViewerProtocolPolicy: redirect-to-https
+#         AllowedMethods: [GET, HEAD]
+#         CachedMethods: [GET, HEAD]
+
+#         ForwardedValues:
+#           QueryString: true   # important for React routing
+#           Cookies:
+#             Forward: none
+
+#       CustomErrorResponses:
+#         - ErrorCode: 403
+#           ResponseCode: 200
+#           ResponsePagePath: /index.html
+#         - ErrorCode: 404
+#           ResponseCode: 200
+#           ResponsePagePath: /index.html
+
+#       ViewerCertificate:
+#         CloudFrontDefaultCertificate: true
+
+
+#         #-----BucketPolicy-----#
+#   FrontendBucketPolicy:
+#     Type: AWS::S3::BucketPolicy
+#     Properties:
+#       Bucket: !Ref FrontendBucket
+#       PolicyDocument:
+#         Statement:
+#           - Effect: Allow
+#             Principal:
+#               Service: cloudfront.amazonaws.com
+#             Action: s3:GetObject
+#             Resource: !Sub "${FrontendBucket.Arn}/*"
+#             Condition:
+#               StringEquals:
+#                 AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+# # ---------------- OUTPUTS ----------------
+
+# Outputs:
+
+#   ApiUrl:
+#     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+#   CognitoLoginUrl:
+#     Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=http://localhost:3000"
+
+#   FrontendURL:
+#     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+#   FrontendBucketName:
+#     Value: !Ref FrontendBucket
+
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (Full IaC - FINAL FIXED)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# Resources:
+
+# # ---------------- COGNITO ----------------
+
+#   UserPool:
+#     Type: AWS::Cognito::UserPool
+#     Properties:
+#       UserPoolName: !Sub "${AWS::StackName}-userpool"
+#       AutoVerifiedAttributes: [email]
+#       UsernameAttributes: [email]
+
+#   UserPoolClient:
+#     Type: AWS::Cognito::UserPoolClient
+#     Properties:
+#       ClientName: !Sub "${AWS::StackName}-client"
+#       UserPoolId: !Ref UserPool
+#       GenerateSecret: false
+#       AllowedOAuthFlowsUserPoolClient: true
+#       AllowedOAuthFlows: [implicit]
+#       AllowedOAuthScopes: [email, openid, profile]
+#       CallbackURLs:
+#         - http://localhost:5173/
+#         - http://localhost:5174/
+#         - http://localhost:5175/
+#         - http://localhost:5176/
+#         - http://localhost:5177/
+#         - http://localhost:5178/
+#         - http://localhost:5179/
+ 
+
+
+#       SupportedIdentityProviders:
+#         - COGNITO
+
+#   UserPoolDomain:
+#     Type: AWS::Cognito::UserPoolDomain
+#     Properties:
+#       Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+#       UserPoolId: !Ref UserPool
+
+# # ---------------- HTTP API ----------------
+
+#   HttpApi:
+#     Type: AWS::Serverless::HttpApi
+#     Properties:
+#       StageName: Prod
+#       CorsConfiguration:
+#         AllowMethods:
+#             - GET
+#             - POST
+#             - PUT
+#             - DELETE
+#             - OPTIONS
+
+#         AllowHeaders:
+#             - Content-Type
+#             - Authorization
+
+#         AllowOrigins:
+#             - http://localhost:5173
+#             - http://localhost:5174
+#             - http://localhost:5175
+#             - http://localhost:5176
+#             - http://localhost:5177
+#       Auth:
+#         DefaultAuthorizer: CognitoAuth
+#         Authorizers:
+#           CognitoAuth:
+#             JwtConfiguration:
+#               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+#               audience:
+#                 - !Ref UserPoolClient
+#             IdentitySource: "$request.header.Authorization"
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+#       GlobalSecondaryIndexes:
+#         - IndexName: userId-index
+#           KeySchema:
+#             - AttributeName: userId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+# # ---------------- S3 / SQS / SNS ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+
+# # ---------------- FRONTEND (S3 + CLOUDFRONT) ----------------
+
+#   FrontendBucket:
+#     Type: AWS::S3::Bucket
+
+#   CloudFrontOAC:
+#     Type: AWS::CloudFront::OriginAccessControl
+#     Properties:
+#       OriginAccessControlConfig:
+#         Name: !Sub "${AWS::StackName}-oac"
+#         OriginAccessControlOriginType: s3
+#         SigningBehavior: always
+#         SigningProtocol: sigv4
+
+#   CloudFrontDistribution:
+#     Type: AWS::CloudFront::Distribution
+#     Properties:
+#       DistributionConfig:
+#         Enabled: true
+#         DefaultRootObject: index.html
+
+#         Origins:
+#           - Id: S3Origin
+#             DomainName: !GetAtt FrontendBucket.RegionalDomainName
+#             S3OriginConfig: {}
+#             OriginAccessControlId: !Ref CloudFrontOAC
+
+#         DefaultCacheBehavior:
+#           TargetOriginId: S3Origin
+#           ViewerProtocolPolicy: redirect-to-https
+#           AllowedMethods: [GET, HEAD]
+#           CachedMethods: [GET, HEAD]
+#           ForwardedValues:
+#             QueryString: true
+#             Cookies:
+#               Forward: none
+
+#         CustomErrorResponses:
+#           - ErrorCode: 403
+#             ResponseCode: 200
+#             ResponsePagePath: /index.html
+#           - ErrorCode: 404
+#             ResponseCode: 200
+#             ResponsePagePath: /index.html
+
+#         ViewerCertificate:
+#           CloudFrontDefaultCertificate: true
+
+#   FrontendBucketPolicy:
+#     Type: AWS::S3::BucketPolicy
+#     Properties:
+#       Bucket: !Ref FrontendBucket
+#       PolicyDocument:
+#         Statement:
+#           - Effect: Allow
+#             Principal:
+#               Service: cloudfront.amazonaws.com
+#             Action: s3:GetObject
+#             Resource: !Sub "${FrontendBucket.Arn}/*"
+#             Condition:
+#               StringEquals:
+#                 AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+# # ---------------- OUTPUTS ----------------
+
+# Outputs:
+
+#   ApiUrl:
+#     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+#   CognitoLoginUrl:
+#     Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=http://localhost:5173/"
+
+#   FrontendURL:
+#     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+#   FrontendBucketName:
+#     Value: !Ref FrontendBucket
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SaaS Task Platform (FULL WORKING VERSION)
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Timeout: 10
+    MemorySize: 256
+
+Resources:
+
+# ---------------- COGNITO ----------------
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-userpool"
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-client"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [implicit]
+      AllowedOAuthScopes: [email, openid, profile]
+      CallbackURLs:
+        - http://localhost:5173
+        - https://d3brddi7c2rvyc.cloudfront.net 
+      
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+      UserPoolId: !Ref UserPool
+
+# ---------------- HTTP API ----------------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: Prod
+
+      CorsConfiguration:
+        AllowOrigins:
+           - http://localhost:5173
+           - https://d3brddi7c2rvyc.cloudfront.net 
+        AllowMethods:
+           - GET
+           - POST
+           - PUT
+           - DELETE
+           - OPTIONS
+        AllowHeaders:
+           - Content-Type
+           - Authorization
+        AllowCredentials: false
+        
+
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        Authorizers:
+          CognitoAuth:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience:
+                  - !Ref UserPoolClient
+            IdentitySource: "$request.header.Authorization"
+  
+
+# ---------------- DYNAMODB ----------------
+
+  TasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: taskId
+          AttributeType: S
+        - AttributeName: workspaceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: taskId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: workspaceId-index
+          KeySchema:
+            - AttributeName: workspaceId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  WorkspaceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: workspaceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: workspaceId
+          KeyType: HASH
+
+  WorkspaceMembersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: workspaceId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: workspaceId
+          KeyType: HASH
+        - AttributeName: userId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+# ---------------- S3 / SQS / SNS ----------------
+
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - http://localhost:5173
+              - https://d3brddi7c2rvyc.cloudfront.net 
+            AllowedMethods:
+              - PUT
+              - GET
+              - POST
+            AllowedHeaders:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3000
+
+  TaskQueue:
+    Type: AWS::SQS::Queue
+
+  TaskTopic:
+    Type: AWS::SNS::Topic
+
+  TaskNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+       Protocol: email
+       Endpoint: fathimayosra25@gmail.com  # 🔴 replace with your email
+       TopicArn: !Ref TaskTopic
+
+
+# ---------------- LAMBDA FUNCTIONS ----------------
+
+  WorkspaceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/workspace-service/
+      Handler: index.handler
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Environment:
+        Variables:
+          WORKSPACE_TABLE: !Ref WorkspaceTable
+          MEMBERS_TABLE: !Ref WorkspaceMembersTable
+      Events:
+        WorkspaceApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /workspace
+            Method: ANY
+            Auth:
+                Authorizer: CognitoAuth
+        
+        WorkspaceOptionsApi:
+          Type: HttpApi
+          Properties:
+              ApiId: !Ref HttpApi
+              Path: /workspace
+              Method: OPTIONS
+              Auth:
+                Authorizer: NONE
+        
+           
+
+  TaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/task-service/
+      Handler: index.handler
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AmazonSQSFullAccess
+        - AmazonS3FullAccess
+      Environment:
+        Variables:
+          TASKS_TABLE: !Ref TasksTable
+          MEMBERS_TABLE: !Ref WorkspaceMembersTable
+          SQS_QUEUE_URL: !Ref TaskQueue
+          UPLOAD_BUCKET: !Ref UploadBucket
+      Events:
+        TaskApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /tasks
+            Method: ANY
+            Auth:
+                Authorizer: CognitoAuth
+
+        TaskOptionsApi:
+          Type: HttpApi
+          Properties:
+              ApiId: !Ref HttpApi
+              Path: /tasks
+              Method: OPTIONS
+              Auth:
+                Authorizer: NONE
+            
+
+  MembersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/members-service/
+      Handler: index.handler
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Environment:
+        Variables:
+          MEMBERS_TABLE: !Ref WorkspaceMembersTable
+      Events:
+        MembersApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /members
+            Method: ANY
+            Auth:
+                Authorizer: CognitoAuth
+
+        MembersOptionsApi:
+          Type: HttpApi
+          Properties:
+              ApiId: !Ref HttpApi
+              Path: /members
+              Method: OPTIONS
+              Auth:
+                Authorizer: NONE
+           
+
+  UploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/upload-url/
+      Handler: index.handler
+      Policies:
+        - AmazonS3FullAccess
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadBucket
+      Events:
+        UploadApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /upload-url
+            Method: ANY
+            Auth:
+                Authorizer: CognitoAuth
+
+        UploadOptionsApi:
+          Type: HttpApi
+          Properties:
+              ApiId: !Ref HttpApi
+              Path: /upload-url
+              Method: OPTIONS
+              Auth:
+                Authorizer: NONE
+           
+
+  DownloadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/download-url/
+      Handler: index.handler
+      Policies:
+        - AmazonS3FullAccess
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadBucket
+      Events:
+        DownloadApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /download-url
+            Method: ANY
+            Auth:
+                Authorizer: CognitoAuth
+
+        DownloadOptionsApi:
+          Type: HttpApi
+          Properties:
+              ApiId: !Ref HttpApi
+              Path: /download-url
+              Method: OPTIONS
+              Auth:
+                Authorizer: NONE
+            
+
+  ConsumerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/consumer-service/
+      Handler: index.handler
+      Policies:
+        - AmazonSNSFullAccess
+        - AmazonSQSFullAccess
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref TaskTopic
+      Events:
+        SQSTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TaskQueue.Arn
+            BatchSize: 1
+
+# ---------------- FRONTEND (S3 + CLOUDFRONT) ----------------
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+  
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig: {}
+            OriginAccessControlId: !Ref CloudFrontOAC
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+# ---------------- OUTPUTS ----------------
+
+Outputs:
+
+  ApiUrl:
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+  CognitoLoginUrl:
+    Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=https://d3brddi7c2rvyc.cloudfront.net "
+
+
+  FrontendURL:
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  BucketName:
+    Value: !Ref FrontendBucket
+
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform (FULL WORKING VERSION)
+
+# Globals:
+#   Function:
+#     Runtime: nodejs24.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# Resources:
+
+# # ---------------- COGNITO ----------------
+
+#   UserPool:
+#     Type: AWS::Cognito::UserPool
+#     Properties:
+#       UserPoolName: !Sub "${AWS::StackName}-userpool"
+#       AutoVerifiedAttributes: [email]
+#       UsernameAttributes: [email]
+
+#   UserPoolClient:
+#     Type: AWS::Cognito::UserPoolClient
+#     Properties:
+#       ClientName: !Sub "${AWS::StackName}-client"
+#       UserPoolId: !Ref UserPool
+#       GenerateSecret: false
+#       AllowedOAuthFlowsUserPoolClient: true
+#       AllowedOAuthFlows: [implicit]
+#       AllowedOAuthScopes: [email, openid, profile]
+#       CallbackURLs:
+#         - http://localhost:5173
+#       SupportedIdentityProviders:
+#         - COGNITO
+
+#   UserPoolDomain:
+#     Type: AWS::Cognito::UserPoolDomain
+#     Properties:
+#       Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+#       UserPoolId: !Ref UserPool
+
+# # ---------------- HTTP API ----------------
+
+#   HttpApi:
+#     Type: AWS::Serverless::HttpApi
+#     Properties:
+#       StageName: Prod
+
+#       CorsConfiguration:
+#         AllowOrigins:
+#           - http://localhost:5173
+#         AllowMethods:
+#           - GET
+#           - POST
+#           - PUT
+#           - DELETE
+#           - OPTIONS
+#         AllowHeaders:
+#           - Content-Type
+#           - Authorization
+       
+
+#       Auth:
+#         DefaultAuthorizer: CognitoAuth
+#         AddDefaultAuthorizerToCorsPreflight: false
+#         Authorizers:
+#           CognitoAuth:
+#             JwtConfiguration:
+#               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+#               audience:
+#                 - !Ref UserPoolClient
+#             IdentitySource: "$request.header.Authorization"
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+#       GlobalSecondaryIndexes:
+#         - IndexName: userId-index
+#           KeySchema:
+#             - AttributeName: userId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+# # ---------------- S3 / SQS / SNS ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+
+# # ---------------- LAMBDA FUNCTIONS ----------------
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonDynamoDBFullAccess
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Events:
+#         WorkspaceApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /workspace
+#             Method: ANY
+#             Auth:
+#               Authorizer: CognitoAuth
+
+#   TaskFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonDynamoDBFullAccess
+#         - AmazonSQSFullAccess
+#         - AmazonS3FullAccess
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Events:
+#         TaskApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /tasks
+#             Method: ANY
+#             Auth:
+#               Authorizer: CognitoAuth
+
+#   MembersFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/members-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonDynamoDBFullAccess
+#       Environment:
+#         Variables:
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Events:
+#         MembersApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /members
+#             Method: ANY
+#             Auth:
+#               Authorizer: CognitoAuth
+
+#   UploadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/upload-url/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonS3FullAccess
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Events:
+#         UploadApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /upload-url
+#             Method: ANY
+#             Auth:
+#               Authorizer: CognitoAuth
+
+#   DownloadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/download-url/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonS3FullAccess
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Events:
+#         DownloadApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /download-url
+#             Method: ANY
+#             Auth:
+#               Authorizer: CognitoAuth
+
+#   ConsumerFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/consumer-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonSNSFullAccess
+#         - AmazonSQSFullAccess
+#       Environment:
+#         Variables:
+#           SNS_TOPIC_ARN: !Ref TaskTopic
+#       Events:
+#         SQSTrigger:
+#           Type: SQS
+#           Properties:
+#             Queue: !GetAtt TaskQueue.Arn
+#             BatchSize: 1
+
+# # ---------------- FRONTEND ----------------
+
+#   FrontendBucket:
+#     Type: AWS::S3::Bucket
+
+#   CloudFrontOAC:
+#     Type: AWS::CloudFront::OriginAccessControl
+#     Properties:
+#       OriginAccessControlConfig:
+#         Name: !Sub "${AWS::StackName}-oac"
+#         OriginAccessControlOriginType: s3
+#         SigningBehavior: always
+#         SigningProtocol: sigv4
+
+#   CloudFrontDistribution:
+#     Type: AWS::CloudFront::Distribution
+#     Properties:
+#       DistributionConfig:
+#         Enabled: true
+#         DefaultRootObject: index.html
+#         Origins:
+#           - Id: S3Origin
+#             DomainName: !GetAtt FrontendBucket.RegionalDomainName
+#             S3OriginConfig: {}
+#             OriginAccessControlId: !Ref CloudFrontOAC
+
+#         DefaultCacheBehavior:
+#           TargetOriginId: S3Origin
+#           ViewerProtocolPolicy: redirect-to-https
+#           AllowedMethods: [GET, HEAD]
+#           CachedMethods: [GET, HEAD]
+#           ForwardedValues:
+#             QueryString: true
+#             Cookies:
+#               Forward: none
+
+#         CustomErrorResponses:
+#           - ErrorCode: 403
+#             ResponseCode: 200
+#             ResponsePagePath: /index.html
+#           - ErrorCode: 404
+#             ResponseCode: 200
+#             ResponsePagePath: /index.html
+
+#         ViewerCertificate:
+#           CloudFrontDefaultCertificate: true
+
+# # ---------------- OUTPUTS ----------------
+
+# Outputs:
+
+#   ApiUrl:
+#     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+#   CognitoLoginUrl:
+#     Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=http://localhost:5173/"
+
+#   FrontendURL:
+#     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+#   BucketName:
+#     Value: !Ref FrontendBucket
+
+# AWSTemplateFormatVersion: '2010-09-09'
+# Transform: AWS::Serverless-2016-10-31
+# Description: SaaS Task Platform
+
+# Globals:
+#   Function:
+#     Runtime: nodejs20.x
+#     Timeout: 10
+#     MemorySize: 256
+
+# Resources:
+
+# # ---------------- COGNITO ----------------
+
+#   UserPool:
+#     Type: AWS::Cognito::UserPool
+#     Properties:
+#       UserPoolName: !Sub "${AWS::StackName}-userpool"
+#       AutoVerifiedAttributes:
+#         - email
+#       UsernameAttributes:
+#         - email
+
+#   UserPoolClient:
+#     Type: AWS::Cognito::UserPoolClient
+#     Properties:
+#       ClientName: !Sub "${AWS::StackName}-client"
+#       UserPoolId: !Ref UserPool
+#       GenerateSecret: false
+#       AllowedOAuthFlowsUserPoolClient: true
+#       AllowedOAuthFlows:
+#         - implicit
+#       AllowedOAuthScopes:
+#         - email
+#         - openid
+#         - profile
+#       CallbackURLs:
+#         - http://localhost:5173
+#       SupportedIdentityProviders:
+#         - COGNITO
+
+#   UserPoolDomain:
+#     Type: AWS::Cognito::UserPoolDomain
+#     Properties:
+#       Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+#       UserPoolId: !Ref UserPool
+
+# # ---------------- HTTP API ----------------
+
+#   HttpApi:
+#     Type: AWS::Serverless::HttpApi
+#     Properties:
+#       StageName: Prod
+
+#       CorsConfiguration:
+#         AllowOrigins:
+#           - http://localhost:5173
+#         AllowMethods:
+#           - GET
+#           - POST
+#           - PUT
+#           - DELETE
+#           - OPTIONS
+#         AllowHeaders:
+#           - Content-Type
+#           - Authorization
+
+#       Auth:
+#         DefaultAuthorizer: CognitoAuth
+#         AddDefaultAuthorizerToCorsPreflight: false
+#         Authorizers:
+#           CognitoAuth:
+#             JwtConfiguration:
+#               issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+#               audience:
+#                 - !Ref UserPoolClient
+#             IdentitySource: "$request.header.Authorization"
+
+# # ---------------- DYNAMODB ----------------
+
+#   TasksTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: taskId
+#           AttributeType: S
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: taskId
+#           KeyType: HASH
+#       GlobalSecondaryIndexes:
+#         - IndexName: workspaceId-index
+#           KeySchema:
+#             - AttributeName: workspaceId
+#               KeyType: HASH
+#           Projection:
+#             ProjectionType: ALL
+
+#   WorkspaceTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+
+#   WorkspaceMembersTable:
+#     Type: AWS::DynamoDB::Table
+#     Properties:
+#       BillingMode: PAY_PER_REQUEST
+#       AttributeDefinitions:
+#         - AttributeName: workspaceId
+#           AttributeType: S
+#         - AttributeName: userId
+#           AttributeType: S
+#       KeySchema:
+#         - AttributeName: workspaceId
+#           KeyType: HASH
+#         - AttributeName: userId
+#           KeyType: RANGE
+
+# # ---------------- S3 / SQS / SNS ----------------
+
+#   UploadBucket:
+#     Type: AWS::S3::Bucket
+
+#   TaskQueue:
+#     Type: AWS::SQS::Queue
+
+#   TaskTopic:
+#     Type: AWS::SNS::Topic
+
+# # ---------------- LAMBDA FUNCTIONS ----------------
+
+#   WorkspaceFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/workspace-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonDynamoDBFullAccess
+#       Environment:
+#         Variables:
+#           WORKSPACE_TABLE: !Ref WorkspaceTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Events:
+#         WorkspaceApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /workspace
+#             Method: ANY
+
+#   TaskFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/task-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonDynamoDBFullAccess
+#         - AmazonSQSFullAccess
+#         - AmazonS3FullAccess
+#       Environment:
+#         Variables:
+#           TASKS_TABLE: !Ref TasksTable
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#           SQS_QUEUE_URL: !Ref TaskQueue
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Events:
+#         TaskApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /tasks
+#             Method: ANY
+
+#   MembersFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/members-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonDynamoDBFullAccess
+#       Environment:
+#         Variables:
+#           MEMBERS_TABLE: !Ref WorkspaceMembersTable
+#       Events:
+#         MembersApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /members
+#             Method: ANY
+
+#   UploadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/upload-url/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonS3FullAccess
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Events:
+#         UploadApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /upload-url
+#             Method: ANY
+
+#   DownloadUrlFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/download-url/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonS3FullAccess
+#       Environment:
+#         Variables:
+#           UPLOAD_BUCKET: !Ref UploadBucket
+#       Events:
+#         DownloadApi:
+#           Type: HttpApi
+#           Properties:
+#             ApiId: !Ref HttpApi
+#             Path: /download-url
+#             Method: ANY
+
+#   ConsumerFunction:
+#     Type: AWS::Serverless::Function
+#     Properties:
+#       CodeUri: src/consumer-service/
+#       Handler: index.handler
+#       Policies:
+#         - AmazonSNSFullAccess
+#         - AmazonSQSFullAccess
+#       Environment:
+#         Variables:
+#           SNS_TOPIC_ARN: !Ref TaskTopic
+#       Events:
+#         SQSTrigger:
+#           Type: SQS
+#           Properties:
+#             Queue: !GetAtt TaskQueue.Arn
+#             BatchSize: 1
+
+# # ---------------- FRONTEND ----------------
+
+#   FrontendBucket:
+#     Type: AWS::S3::Bucket
+
+#   CloudFrontDistribution:
+#     Type: AWS::CloudFront::Distribution
+#     Properties:
+#       DistributionConfig:
+#         Enabled: true
+#         DefaultRootObject: index.html
+#         Origins:
+#           - Id: S3Origin
+#             DomainName: !GetAtt FrontendBucket.RegionalDomainName
+#             S3OriginConfig: {}
+
+#         DefaultCacheBehavior:
+#           TargetOriginId: S3Origin
+#           ViewerProtocolPolicy: redirect-to-https
+#           AllowedMethods:
+#             - GET
+#             - HEAD
+#           CachedMethods:
+#             - GET
+#             - HEAD
+#           ForwardedValues:
+#             QueryString: true
+#             Cookies:
+#               Forward: none
+
+#         CustomErrorResponses:
+#           - ErrorCode: 403
+#             ResponseCode: 200
+#             ResponsePagePath: /index.html
+#           - ErrorCode: 404
+#             ResponseCode: 200
+#             ResponsePagePath: /index.html
+
+#         ViewerCertificate:
+#           CloudFrontDefaultCertificate: true
+
+# # ---------------- OUTPUTS ----------------
+
+# Outputs:
+
+#   ApiUrl:
+#     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+#   CognitoLoginUrl:
+#     Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=token&scope=openid+email+profile&redirect_uri=http://localhost:5173/"
+
+#   FrontendURL:
+#     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+#   BucketName:
+#     Value: !Ref FrontendBucket

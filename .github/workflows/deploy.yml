@@ -1,0 +1,65 @@
+name: Deploy SaaS App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # ---------------- AWS SETUP ----------------
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # ---------------- BACKEND DEPLOY ----------------
+    - name: Install SAM CLI
+      uses: aws-actions/setup-sam@v2
+
+    - name: Build SAM
+      run: sam build
+
+    - name: Deploy SAM
+      run: |
+        sam deploy 
+        --no-confirm-changeset 
+        --no-fail-on-empty-changeset 
+        --stack-name saas-collab-app 
+        --capabilities CAPABILITY_IAM
+
+    # ---------------- FRONTEND BUILD ----------------
+    - name: Install Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm install
+
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+
+    # ---------------- S3 DEPLOY ----------------
+    - name: Upload to S3
+      run: |
+        aws s3 sync frontend/dist s3://${{ secrets.S3_BUCKET }} --delete
+
+    # ---------------- CLOUDFRONT INVALIDATION ----------------
+    - name: Invalidate CloudFront
+      run: |
+        aws cloudfront create-invalidation 
+        --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} 
+        --paths "/*"
