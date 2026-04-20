@@ -30,10 +30,10 @@ jobs:
 
     - name: Deploy SAM
       run: |
-        sam deploy 
-        --no-confirm-changeset 
-        --no-fail-on-empty-changeset 
-        --stack-name saas-collab-app 
+        sam deploy \
+        --no-confirm-changeset \
+        --no-fail-on-empty-changeset \
+        --stack-name saas-collab-app \
         --capabilities CAPABILITY_IAM
 
     # ---------------- FRONTEND BUILD ----------------
