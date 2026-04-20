@@ -1643,9 +1643,26 @@ Resources:
 
   TaskQueue:
     Type: AWS::SQS::Queue
+    Properties:
+       RedrivePolicy:
+          deadLetterTargetArn: !GetAtt TaskQueueDLQ.Arn
+          maxReceiveCount: 3
+
+  TaskQueueDLQ:
+    Type: AWS::SQS::Queue
 
   TaskTopic:
     Type: AWS::SNS::Topic
+
+  AlarmSNSTopic:
+    Type: AWS::SNS::Topic
+
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: your-email@gmail.com
+      TopicArn: !Ref AlarmSNSTopic
 
   TaskNotificationSubscription:
     Type: AWS::SNS::Subscription
@@ -1653,6 +1670,24 @@ Resources:
        Protocol: email
        Endpoint: fathimayosra25@gmail.com  # 🔴 replace with your email
        TopicArn: !Ref TaskTopic
+
+#--------MONITORING_CLOUDWATCH_ALARM-----------------
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AlarmSNSTopic
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TaskFunction
 
 
 # ---------------- LAMBDA FUNCTIONS ----------------
