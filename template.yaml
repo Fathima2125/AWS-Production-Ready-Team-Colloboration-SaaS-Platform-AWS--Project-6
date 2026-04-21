@@ -1661,7 +1661,7 @@ Resources:
     Type: AWS::SNS::Subscription
     Properties:
       Protocol: email
-      Endpoint: your-email@gmail.com
+      Endpoint: fathimayosra25@gmail.com
       TopicArn: !Ref AlarmSNSTopic
 
   TaskNotificationSubscription:

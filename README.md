@@ -1,127 +1,343 @@
-# saas-collab-app
+# 🚀 SaaS Collaboraation Task Management Platform(AWS Serverless)
+AWS Serverless | Event-Driven Architecture | CI/CD (GitHub Actions) | Full-Stack SaaS
 
-This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders.
+A production-ready, event-driven SaaS application built using AWS Serverless technologies, featuring authenitcation,workspace collaboration, task management, file uploads,CI/CD automation and monitoring.
 
-- hello-world - Code for the application's Lambda function.
-- events - Invocation events that you can use to invoke the function.
-- hello-world/tests - Unit tests for the application code. 
-- template.yaml - A template that defines the application's AWS resources.
+## 🌐 System Architecture
 
-The application uses several AWS resources, including Lambda functions and an API Gateway API. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+### Architecture Diagram:
+ ![diagram](<screenshots/Architecture-Diagram for Saas project.png>)
 
-If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
-The AWS Toolkit is an open source plug-in for popular IDEs that uses the SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds a simplified step-through debugging experience for Lambda function code. See the following links to get started.
+User
+ ↓
+CloudFront (Frontend Hosting)
+ ↓
+S3 (React Build Files)
+ ↓
+API Gateway (HTTP API)
+ ↓
+Lambda (Business Logic)
+ ↓
+DynamoDB (Database)
+ ↓
+SQS (Event Queue)
+ ↓
+Lambda Consumer
+ ↓
+SNS (Notifications)
+ ↓
+Email Alerts
 
-* [CLion](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [GoLand](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [IntelliJ](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [WebStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [Rider](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PhpStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PyCharm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [RubyMine](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [DataGrip](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [VS Code](https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/welcome.html)
-* [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
+Monitoring:
+CloudWatch Logs + Alarms
 
-## Deploy the sample application
+## ✨ Key Features
 
-The Serverless Application Model Command Line Interface (SAM CLI) is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
+### 👤 Authentication
+ - AWS Cognito login (OAuth2)
+ - JWT token-based secure API access
+ - Protected backend routes
 
-To use the SAM CLI, you need the following tools.
+### 🗂️ Workspace Management
+ - Create/Delete multiple workspaces
+ - Workspace-based task separation
+ - Role-based access(Admin/User)
+ - Multi-user collaboration
 
-* SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-* Node.js - [Install Node.js 22](https://nodejs.org/en/), including the NPM package management tool.
-* Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community)
+### ✅ Task Management
+ - Create / Update / Delete tasks
+ - Status tracking:
+          - TODO
+          - IN_PROGRESS
+          - DONE
+ - File attachments via S3
 
-To build and deploy your application for the first time, run the following in your shell:
+### 📎 File Upload System
+ - Secure pre-signed S3 upload URLs
+ - Direct browser-to-S3 upload
+ - Task-based file association
 
-```bash
+### 🔔 Notification System (Event Driven)
+ - SQS-based event queue
+ - Lambda consumer processes events
+ - SNS sends email notifications:
+          - Task Created
+          - Task Updated
+          - Task Deleted
+
+### ⚙️ CI/CD Pipeline
+ - GitHub Actions automation
+ - Backend deployed via AWS SAM
+ - Frontend built with Vite
+ - S3 deployment + CloudFront invalidation
+ - Fully automated deployment pipeline
+
+
+## 🔄 Full System Flow (End-to-End)
+
+### 🔐 Authentication Flow
+User → Cognito Login → Access Token (JWT)
+
+### 🧠 Core Application Flow
+1. User logs in (Cognito)
+2. Frontend receives JWT token
+3. User calls API (Create Task)
+4. API Gateway triggers Lambda
+5. Lambda stores data in DynamoDB
+6. Lambda publishes event to SQS
+7. Consumer Lambda processes SQS message
+8. SNS sends email notification
+9. CloudWatch logs all events
+
+
+## 🏗️ Detailed Event Flow
+
+### Example: Create Task
+
+Login → Get JWT Token
+        ↓
+POST /tasks API Call
+        ↓
+API Gateway
+        ↓
+Lambda (Task Service)
+        ↓
+DynamoDB (Store Task)
+        ↓
+SQS (Task Event Published)
+        ↓
+Consumer Lambda
+        ↓
+SNS Topic
+        ↓
+Email Notification Sent
+
+
+## 🏗️ Project Structure
+
+saas-collab-app/
+│
+├── src/
+│   ├── workspace-service/
+│   ├── task-service/
+│   ├── members-service/
+│   ├── upload-url/
+│   ├── download-url/
+│   └── consumer-service/
+│
+├── frontend/
+│   └── (React App)
+│
+├── template.yaml
+├── .github/workflows/deploy.yml
+└── README.md
+
+
+
+## ⚙️ Setup Instructions
+
+### 1️⃣ Backend Setup (AWS SAM)
 sam build
-sam deploy --guided
-```
+sam deploy
+ - After deployment, note:
+          * API URL
+          * Cognito Login URL
+          * S3 Bucket Name
+          * CloudFront URL
 
-The first command will build the source of your application. The second command will package and deploy your application to AWS, with a series of prompts:
+### 2️⃣ Frontend Setup (React)
+cd frontend
+npm install
+npm run build
 
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
+### Run Locally (optional)
+npm run dev
 
-You can find your API Gateway Endpoint URL in the output values displayed after deployment.
+### 3️⃣ Deploy Frontend to S3
+aws s3 sync dist/ s3://your-bucket-name --delete
 
-## Use the SAM CLI to build and test locally
+### 4️⃣ CloudFront Cache Refresh
+aws cloudfront create-invalidation \
+--distribution-id YOUR_DISTRIBUTION_ID \
+--paths "/*"
 
-Build your application with the `sam build` command.
 
-```bash
-saas-collab-app$ sam build
-```
 
-The SAM CLI installs dependencies defined in `hello-world/package.json`, creates a deployment package, and saves it in the `.aws-sam/build` folder.
+## Lambda Environment
+TASKS_TABLE
+WORKSPACE_TABLE
+MEMBERS_TABLE
+UPLOAD_BUCKET
+SQS_QUEUE_URL
+SNS_TOPIC_ARN
 
-Test a single function by invoking it directly with a test event. An event is a JSON document that represents the input that the function receives from the event source. Test events are included in the `events` folder in this project.
+## 📊 Monitoring & Observability
+ - CloudWatch Logs for all Lambda functions
+ - SNS email alerts for task events
+ - Event traceability through SQS
+ - Debuggable serverless pipeline
 
-Run functions locally and invoke them with the `sam local invoke` command.
 
-```bash
-saas-collab-app$ sam local invoke HelloWorldFunction --event events/event.json
-```
+## ⚠️ Challenges Faced
 
-The SAM CLI can also emulate your application's API. Use the `sam local start-api` to run the API locally on port 3000.
+### 🔐 Authentication Complexity
 
-```bash
-saas-collab-app$ sam local start-api
-saas-collab-app$ curl http://localhost:3000/
-```
+  - Managing Cognito JWT tokens between frontend and API Gateway required careful handling of redirect URIs and token extraction.
 
-The SAM CLI reads the application template to determine the API's routes and the functions that they invoke. The `Events` property on each function's definition includes the route and method for each path.
+### 🌐 CORS & API Integration
+  - Faces preflight request failures
+  - Fixed by: 
+        * Adding OPTIONS ROUTE
+        * Disabling auth for OPTIONS
+        * Correct APi Gateway CORS config
 
-```yaml
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
-```
+### ☁️ S3 + CloudFront Deployment Issues
 
-## Add a resource to your application
-The application template uses AWS Serverless Application Model (AWS SAM) to define application resources. AWS SAM is an extension of AWS CloudFormation with a simpler syntax for configuring common serverless application resources such as functions, triggers, and APIs. For resources not included in [the SAM specification](https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md), you can use standard [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html) resource types.
+  - React build deployment required correct handling of dist/ folder and cache invalidation strategies for updates to reflect properly.
+  - S3 Bucket not accesible:
+  - Fixed by:
+        * Origin Access Control(OAC)
+        * Proper Permissions
 
-## Fetch, tail, and filter Lambda function logs
+### 🔄 Event-Driven Debugging
 
-To simplify troubleshooting, SAM CLI has a command called `sam logs`. `sam logs` lets you fetch logs generated by your deployed Lambda function from the command line. In addition to printing the logs on the terminal, this command has several nifty features to help you quickly find the bug.
+  - Ensuring proper message flow across SQS → Lambda → SNS required debugging event structure and JSON parsing consistency.
 
-`NOTE`: This command works for all AWS Lambda functions; not just the ones you deploy using SAM.
+### ⚙️ CI/CD Pipeline Issues
 
-```bash
-saas-collab-app$ sam logs -n HelloWorldFunction --stack-name saas-collab-app --tail
-```
+  - GitHub Actions required debugging:
+        * Node version mismatch in build environment
+        * Deployment ordering (backend before frontend)
+        * Missing secrets configuration
+    
+## 📦 Build & Sync Issues
 
-You can find more information and examples about filtering Lambda function logs in the [SAM CLI Documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-logging.html).
+Handling Vite build output and ensuring correct S3 sync path (dist/) was critical for frontend deployment success.
 
-## Unit tests
 
-Tests are defined in the `hello-world/tests` folder in this project. Use NPM to install the [Mocha test framework](https://mochajs.org/) and run unit tests.
+## 🧪 What I Learned
+ - Designing scalable serverless architectures
+ - Event-driven system design patterns
+ - AWS SAM Infrastructure as Code
+ - CI/CD automation using GitHub Actions
+ - Secure authentication using Cognito + JWT
+ - CloudFront + S3 hosting patterns
+ - Distributed system debugging in AWS
 
-```bash
-saas-collab-app$ cd hello-world
-hello-world$ npm install
-hello-world$ npm run test
-```
 
-## Cleanup
+## 🛠️ Tech Stack
 
-To delete the sample application that you created, use the AWS CLI. Assuming you used your project name for the stack name, you can run the following:
+### Frontend
+ - React (Vite)
+ - Axios
+ - React Router
+### Backend
+ - AWS Lambda (Node.js)
+ - API Gateway HTTP API
+ - DynamoDB
+ - AWS Services
+ - Cognito
+ - S3
+ - CloudFront
+ - SQS
+ - SNS
+ - CloudWatch
+### DevOps
+ - AWS SAM (IaC)
+ - GitHub Actions (CI/CD)
 
-```bash
-sam delete --stack-name saas-collab-app
-```
 
-## Resources
+## 📸 Screenshots
+### Front end 
 
-See the [AWS SAM developer guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html) for an introduction to SAM specification, the SAM CLI, and serverless application concepts.
+#### Login with cognito
+![Login with cognito](<screenshots/Login with Cognito.png>)
+#### Dashboard & Workspace View (from Cloudfront Network)
+![Dashboard & Workspace View](<screenshots/Workspace & Dashboard View.png>)
 
-Next, you can use AWS Serverless Application Repository to deploy ready to use Apps that go beyond hello world samples and learn how authors developed their applications: [AWS Serverless Application Repository main page](https://aws.amazon.com/serverless/serverlessrepo/)
+### API FLOW
+ #### Authorization Header with Token
+ ![Authorization Header with Token](<screenshots/Authorization Header with Token.png>)
+
+ #### New Workspace created
+ ![New Workspace created](<screenshots/New Workspace created.png>)
+
+ #### New Task created
+ ![New Task created](<screenshots/New Task Created.png>)
+
+#### Postman Request-API Works
+![Postman Request-API Works](<screenshots/POSTAM Request-API works.png>)
+
+### Terminal Outputs
+
+#### Result of Sam build & Sam deploy
+![Result of Sam build & Sam deploy](<screenshots/Result of Sam build & sam deploy.png>)
+
+#### npm build done and further steps
+![npm build done and further steps](<screenshots/npm build done and further approaches.png>)
+
+### GitHub Actions(CI/CD)
+![CI/CD](<screenshots/Github actions .png>)
+
+### Monitoring
+
+#### Cloudwatch Logs-Consumer Lambda
+![Cloudwatch Logs-Consumer Lambda](<screenshots/Cloudwatch Logs-Consumer Lambda.png>)
+
+### CloudFormation Stack Created Resources:
+
+#### Stack created
+![Stack created](<screenshots/Stack Created.png>)
+
+#### SQS & DLQ
+![SQS & DLQ](<screenshots/SQS & DLQ.png>)
+
+#### SNS
+![SNS](screenshots/SNS.png)
+
+#### Lambda functions created by AWS SAM & Myself
+![Lambda functions created by AWS SAM & Myself](<screenshots/Lambda Functions created by AWS Sam & Myself.png>)
+
+#### API Gateway
+![API Gateway](<screenshots/API Gateway.png>)
+
+
+
+## 🚀 Deployment
+
+### Backend
+sam build
+sam deploy
+
+#### Frontend
+npm run build
+aws s3 sync dist/ s3://bucket-name --delete
+
+## 🚀 Future Improvements
+
+* Add refresh token handling
+* Role-based UI
+* Real-time updates (WebSockets)
+* Pagination & search
+* Custom domain with HTTPS
+* Multi-tenant isolation improvements
+
+## 🤝 Contribution
+
+Feel free to fork, improve, and contribute!
+
+## 💡 Final Note
+
+This project demonstrates real-world cloud engineering skills including:
+
+* System design
+* Security
+* Scalability
+* Automation
+* Debugging
+
+
+
+## 👨‍💻 Author
+
+### FATHIMA YOSRA AJEEB
